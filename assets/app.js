@@ -21,15 +21,53 @@
   var year = document.getElementById('year');
   if (year) year.textContent = String(new Date().getFullYear());
 
-  // Waitlist form — front-end only (no backend yet). Simply records interest
-  // locally and confirms; swap this for your email/CRM endpoint when ready.
+  // Waitlist — posts to Supabase when assets/config.js exists (safe, RLS-gated
+  // insert into waitlist_signups). Without config, it degrades to a local
+  // confirmation so the site never breaks in a fresh checkout.
   var form = document.getElementById('waitlist-form');
   var note = document.getElementById('waitlist-note');
+  var emailInput = document.getElementById('waitlist-email');
   if (form && note) {
     form.addEventListener('submit', function (event) {
       event.preventDefault();
-      form.hidden = true;
-      note.hidden = false;
+      var cfg = window.EAZILY_CONFIG || null;
+      var base = cfg && cfg.supabaseUrl ? String(cfg.supabaseUrl).replace(/\/+$/, '') : '';
+      var button = form.querySelector('button');
+      var email = emailInput ? emailInput.value.trim() : '';
+
+      if (!base || !cfg.supabaseAnonKey || !email) {
+        form.hidden = true;
+        note.textContent = 'Thanks — we’ll email you when the app launches.';
+        note.hidden = false;
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Sending…';
+
+      fetch(base + '/rest/v1/waitlist_signups', {
+        method: 'POST',
+        headers: {
+          'apikey': cfg.supabaseAnonKey,
+          'Authorization': 'Bearer ' + cfg.supabaseAnonKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ email: email, source: 'landing' })
+      }).then(function (response) {
+        if (response.status === 201 || response.ok) {
+          form.hidden = true;
+          note.textContent = 'Thanks — we’ll email you when the app launches.';
+          note.hidden = false;
+        } else {
+          throw new Error('signup rejected');
+        }
+      }).catch(function () {
+        button.disabled = false;
+        button.textContent = 'Notify me';
+        note.textContent = 'Could not subscribe right now — please try again or email contact@eazily.com.';
+        note.hidden = false;
+      });
     });
   }
 
